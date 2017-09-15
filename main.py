@@ -26,7 +26,6 @@ y_name = 'SalePrice'
 y = train[y_name].values
 y = np.log(y)
 
-
 n_train = train.shape[0]
 n_test = test.shape[0]
 
@@ -57,10 +56,10 @@ def inspect():
         print(subset.count())
         print("*"*100)
 
-
 #inspect()
     
-cols_to_add = ['MSZoning','LotShape','SaleCondition','SaleType']
+cols_to_add = ['MSZoning','LotShape','SaleCondition','SaleType','PavedDrive','GarageFinish','KitchenQual','BsmtFinType1',
+        'BsmtQual','Foundation','MasVnrType','Neighborhood']
 to_dummy = pd.get_dummies(train_test_cat[cols_to_add])
 train_test = pd.concat((train_test,to_dummy),axis=1)
 
@@ -68,8 +67,6 @@ train_test = pd.concat((train_test,to_dummy),axis=1)
 # Now split them up again
 train, test = train_test[:n_train], train_test[n_train:]
 X = train.values
-
-
 
 # KFOLD validation
 fold = 0
@@ -86,16 +83,20 @@ def ensemble_pred(ensemble,X):
     predictions = np.array(predictions).mean(0)
     return predictions
 
-
+feat_importance = lambda model: model.feature_importances_.argsort()[::-1]
+feat_importance_names = []
+worst_features = []
+n_important = 5 
 for tr_idx, val_idx in kf.split(X,y):
 
     X_tr, X_val = X[tr_idx], X[val_idx]
     y_tr, y_val = y[tr_idx], y[val_idx]
-    model1 = RandomForestRegressor(n_estimators=150, max_depth=None, criterion = 'mse')
+    #model1 = RandomForestRegressor(n_estimators=150, max_depth=None, criterion = 'mse')
     model2 = GradientBoostingRegressor(n_estimators=150,learning_rate=0.1,loss='ls')
-    model1.fit(X_tr,y_tr)
+
+    #model1.fit(X_tr,y_tr)
     model2.fit(X_tr,y_tr)
-    ensemble = [model1,model2]
+    ensemble = [model2]
     pred_tr = ensemble_pred(ensemble,X_tr)
     pred_val = ensemble_pred(ensemble,X_val)
     train_mse = rmse(y_tr,pred_tr)
@@ -103,6 +104,14 @@ for tr_idx, val_idx in kf.split(X,y):
     train_mses.append(train_mse)
     val_mses.append(val_mse)
     print("FOLD = {0}, train, val error = {1:.4f}, {2:.4f}.".format(fold,train_mse,val_mse))
+
+    feature_importance = feat_importance(model2)
+    feat_importance_names.append(train.columns[feature_importance][:n_important].values)
+    worst_features.append(train.columns[feature_importance][-n_important:].values)
+
+worst_features = pd.Series(pd.DataFrame(worst_features).values.flatten()).unique()
+feat_importance_names = pd.DataFrame(feat_importance_names)
+pdb.set_trace()
 
 train_mses, val_mses = [np.array(x).mean() for x in [train_mses,val_mses]]
 print("Average train, val error = {0:.3f}, {1:.3f}.".format(train_mses,val_mses))
