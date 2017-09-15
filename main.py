@@ -67,7 +67,7 @@ train_test = pd.concat((train_test_numeric,to_dummy),axis=1)
 
 # KFOLD validation
 fold = 0
-n_folds =  5
+n_folds =  10
 kf = KFold(n_splits=n_folds,random_state = 1006, shuffle = True)
 rmse = lambda x,y: np.sqrt(mse(x,y))
 
@@ -83,10 +83,16 @@ feat_importance = lambda model: model.feature_importances_.argsort()[::-1]
 # Now split up train and test them up again
 n_important = 5 
 
-for i in xrange(20):
+tr_loss =  []
+val_loss = []
+n_feats = []
+feat_val = []
+
+while True:
     print("*"*100)
     feat_importance_names = []
     worst_features = []
+    worst_feature_values = []
 
     features_to_remove = []
     train, test = train_test[:n_train].copy(), train_test[n_train:].copy()
@@ -114,40 +120,62 @@ for i in xrange(20):
         val_mses.append(val_mse)
         print("FOLD = {0}, train, val error = {1:.4f}, {2:.4f}.".format(fold,train_mse,val_mse))
 
+        feature_importance =  model2.feature_importances_.argsort()[::-1] # in descending order of importance
 
-        feature_importance = feat_importance(model2)
+
         feat_importance_names.append(train_test.columns[feature_importance][:n_important].values)
-        worst_features.append(train_test.columns[feature_importance][-n_important:].values)
+
+        worst_features_ = train_test.columns[feature_importance][-n_important:].values
+        worst_features.append(worst_features_)
+        worst_feature_values_ = model2.feature_importances_[feature_importance[-n_important:]]
+        worst_feature_values.append(worst_feature_values_)
         fold += 1
 
-    train_mses, val_mses = [np.array(x).mean() for x in [train_mses,val_mses]]
-    print("Average train, val error = {0:.4f}, {1:.4f}.".format(train_mses,val_mses))
 
+    train_mses, val_mses = [np.array(x).mean() for x in [train_mses,val_mses]]
+    worst_feature_values = np.array(worst_feature_values).mean()
+
+    print("Average train, val error = {0:.4f}, {1:.4f}. Worst feature value mean = {2:.5f}".format(train_mses,val_mses,worst_feature_values))
 
     worst_features = pd.Series(pd.DataFrame(worst_features).values.flatten()).value_counts()
     worst_features = worst_features[worst_features>1].index
-    if worst_features.size == 0:
+
+    if worst_feature_values > 0.0:
         break
+
+    tr_loss.append(train_mses) 
+    val_loss.append(val_mses)
+    n_feats.append(train_test.shape[1])
+    feat_val.append(worst_feature_values)
 
     feat_importance_names = pd.DataFrame(feat_importance_names)
     train_test.drop(worst_features,axis=1,inplace=True)
-    print("Shape is now {0}".format(train_test.shape))
+    shape = train_test.shape
+    print("Shape is now {0}".format(shape))
     print("*"*100)
 
-# now final fit and test
-train, test = train_test[:n_train].copy(), train_test[n_train:].copy()
-X = train.values
-X_te = test.values 
-#model1.fit(X,y)
-model2.fit(X,y)
-ensemble = [model2]
-predictions = np.exp(ensemble_pred(ensemble,X_te))
-predictions = np.vstack((test_id,predictions)).transpose()
-predictions = pd.DataFrame(predictions,columns=['Id','SalePrice'])
-predictions.Id = predictions.Id.astype(int)
-predictions.to_csv("preds.csv",index=0)
-pdb.set_trace()
 
+x = np.arange(len(val_loss))
+plt.subplot(221); plt.plot(x,tr_loss); plt.plot(x,val_loss); plt.title("Train/Validation loss");
+plt.subplot(223); plt.plot(x,n_feats); plt.title("n feats");
+plt.subplot(224); plt.plot(x,feat_val); plt.title("Feature importance of ones removed");
+plt.savefig("perf.jpg")
+
+def fit_test():
+    # now final fit and test
+    train, test = train_test[:n_train].copy(), train_test[n_train:].copy()
+    X = train.values
+    X_te = test.values 
+    #model1.fit(X,y)
+    model2.fit(X,y)
+    ensemble = [model2]
+    predictions = np.exp(ensemble_pred(ensemble,X_te))
+    predictions = np.vstack((test_id,predictions)).transpose()
+    predictions = pd.DataFrame(predictions,columns=['Id','SalePrice'])
+    predictions.Id = predictions.Id.astype(int)
+    predictions.to_csv("preds.csv",index=0)
+
+fit_test()
 
 
 
